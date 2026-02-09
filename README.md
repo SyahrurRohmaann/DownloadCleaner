@@ -19,11 +19,15 @@ A simple CLI tool to organize your Downloads folder by moving files into specifi
 ## Usage
 
 1.  Clone the repository.
-2.  Run the script:
+2.  Enter directory
 
 ```bash
-python cleaner.py --source /path/to/directory
+cd DownloadCleaner
 ```
+# Linux
+3.  ```bash
+    chmod +x cleaner.py
+    ```
 
 ### Options
 
