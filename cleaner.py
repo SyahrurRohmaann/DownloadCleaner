@@ -1,10 +1,9 @@
+import os
 import shutil
 import argparse
-import sys
 import json
+import sys
 from pathlib import Path
-
-HISTORY_FILE = ".cleaner_history.json"
 
 EXTENSION_MAP = {
     'Documents': ['.pdf', '.docx', '.doc', '.txt', '.xlsx', '.xls', '.pptx', '.ppt', '.odt', '.ods', '.odp'],
@@ -17,17 +16,7 @@ EXTENSION_MAP = {
     'Torrents': ['.torrent'],
 }
 
-def save_history(history_data, source_dir):
-    history_path = Path(source_dir) / HISTORY_FILE
-    with open(history_path, 'w') as f:
-        json.dump(history_data, f, indent=4)
-
-def load_history(source_dir):
-    history_path = Path(source_dir) / HISTORY_FILE
-    if history_path.exists():
-        with open(history_path, 'r') as f:
-            return json.load(f)
-    return []
+HISTORY_FILE = ".cleaner_history.json"
 
 def get_category(extension):
     for category, extensions in EXTENSION_MAP.items():
@@ -35,89 +24,104 @@ def get_category(extension):
             return category
     return 'Others'
 
-def generate_unique_path(target_path):
-    if not target_path.exists():
-        return target_path
-    counter = 1
-    stem, suffix = target_path.stem, target_path.suffix
-    while True:
-        new_path = target_path.with_name(f"{stem}_{counter}{suffix}")
-        if not new_path.exists():
-            return new_path
-        counter += 1
+def load_history(source_path):
+    history_file = source_path / HISTORY_FILE
+    if history_file.exists():
+        with open(history_file, 'r') as f:
+            return json.load(f)
+    return []
 
-def organize_files(source_dir, dry_run=False, verbose=False):
-    source_path = Path(source_dir).expanduser().resolve()
-    if not source_path.exists() or not source_path.is_dir():
-        print(f"❌ Error: Folder {source_path} tidak valid.")
-        return
+def save_history(source_path, history):
+    history_file = source_path / HISTORY_FILE
+    with open(history_file, 'w') as f:
+        json.dump(history, f, indent=4)
 
-    print(f"📂 Memproses direktori: {source_path}")
-    history_data = []
-    moved_count = 0
-    script_name = Path(sys.argv[0]).name
-
-    for item in source_path.iterdir():
-        if not item.is_file() or item.name.startswith('.') or item.name == script_name:
-            continue
-
-        category = get_category(item.suffix)
-        target_dir = source_path / category
-        final_target_path = generate_unique_path(target_dir / item.name)
-
-        if dry_run:
-            if verbose: print(f"[Dry-Run] Would move: {item.name} -> {category}/")
-        else:
-            try:
-                target_dir.mkdir(exist_ok=True)
-                history_data.append({
-                    "old": str(item.absolute()),
-                    "new": str(final_target_path.absolute())
-                })
-                shutil.move(str(item), str(final_target_path))
-                moved_count += 1
-                if verbose: print(f"✅ Moved: {item.name} -> {category}/")
-            except Exception as e:
-                print(f"❌ Gagal memindahkan {item.name}: {e}")
-
-    if not dry_run and history_data:
-        save_history(history_data, source_path)
-    
-    print(f"\n✨ Selesai. {moved_count} file berhasil dipindahkan.")
-
-def undo_move(source_dir):
+def undo_move(source_dir, verbose=False):
     source_path = Path(source_dir).expanduser().resolve()
     history = load_history(source_path)
 
     if not history:
-        print("ℹ️ Tidak ada histori pemindahan yang ditemukan di folder ini.")
+        print(f"No history found in {source_path}. Nothing to undo.")
         return
 
-    print(f"⏪ Membatalkan {len(history)} pemindahan terakhir...")
+    print(f"Reversing {len(history)} moves...")
     undo_count = 0
-    for entry in history:
-        current_loc, original_loc = Path(entry['new']), Path(entry['old'])
-        if current_loc.exists():
-            try:
-                shutil.move(str(current_loc), str(original_loc))
-                undo_count += 1
-            except Exception as e:
-                print(f"❌ Gagal mengembalikan {current_loc.name}: {e}")
 
-    (source_path / HISTORY_FILE).unlink() 
-    print(f"✅ Berhasil mengembalikan {undo_count} file.")
+    for entry in history:
+        old_path = Path(entry['old_path'])
+        new_path = Path(entry['new_path'])
+
+        if new_path.exists():
+            try:
+                shutil.move(str(new_path), str(old_path))
+                undo_count += 1
+                if verbose:
+                    print(f"Restored: '{new_path.name}' -> original position")
+            except Exception as e:
+                print(f"Error restoring '{new_path.name}': {e}")
+        else:
+            print(f"Skip: '{new_path.name}' not found (maybe moved/deleted manually).")
+
+    (source_path / HISTORY_FILE).unlink()
+    print(f"Undo completed. {undo_count} files restored.")
+
+def organize_files(source_dir, dry_run=False, verbose=False):
+    source_path = Path(source_dir).expanduser().resolve()
+    
+    if not source_path.exists() or not source_path.is_dir():
+        print(f"Error: Directory '{source_path}' not found.")
+        return
+
+    print(f"Processing directory: {source_path}")
+    if dry_run:
+        print("--- DRY RUN MODE: No files will be moved ---")
+
+    moved_count = 0
+    history = []
+    script_name = Path(sys.argv[0]).name
+
+    for item in source_path.iterdir():
+        if item.is_file() and not item.name.startswith('.') and item.name != script_name:
+            category = get_category(item.suffix)
+            target_dir = source_path / category
+            target_file = target_dir / item.name
+
+            if target_file.exists() and not dry_run:
+                if verbose: print(f"Skipped: '{item.name}' already exists in {category}")
+                continue
+
+            if dry_run:
+                if verbose: print(f"[Dry-Run] Move: '{item.name}' -> '{category}/'")
+            else:
+                try:
+                    target_dir.mkdir(exist_ok=True)
+                    history.append({
+                        "old_path": str(item),
+                        "new_path": str(target_file)
+                    })
+                    
+                    shutil.move(str(item), str(target_file))
+                    moved_count += 1
+                    if verbose: print(f"Moved: '{item.name}' -> '{category}/'")
+                except Exception as e:
+                    print(f"Error moving '{item.name}': {e}")
+
+    if not dry_run and history:
+        save_history(source_path, history)
+
+    print(f"Done. {moved_count} files moved.")
 
 def main():
-    parser = argparse.ArgumentParser(description="Organize files in a directory.")
-    parser.add_argument("source", nargs="?", default=".", help="Source directory")
-    parser.add_argument("--dry-run", action="store_true", help="Simulate only")
-    parser.add_argument("--undo", action="store_true", help="Undo last operation")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Detail logs")
+    parser = argparse.ArgumentParser(description="Organize files and undo operations.")
+    parser.add_argument("--source", type=str, default=".", help="Source directory")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate the process")
+    parser.add_argument("--verbose", action="store_true", help="Detailed output")
+    parser.add_argument("--undo", action="store_true", help="Undo the last organize operation")
 
     args = parser.parse_args()
 
     if args.undo:
-        undo_move(args.source)
+        undo_move(args.source, args.verbose)
     else:
         organize_files(args.source, args.dry_run, args.verbose)
 
