@@ -16,7 +16,7 @@ A simple CLI tool to organize your Downloads folder by moving files into specifi
 - Dry-run mode to preview changes without moving files.
 - Verbose mode for detailed output.
 
-## Usage
+## Usage for Linux
 
 1.  Clone the repository.
 2.  Enter directory
@@ -24,10 +24,18 @@ A simple CLI tool to organize your Downloads folder by moving files into specifi
 ```bash
 cd DownloadCleaner
 ```
-# Linux
-3.  ```bash
-    chmod +x cleaner.py
-    ```
+
+3. Give permission
+
+```bash
+chmod +x cleaner.py
+```
+
+5. Move to system path
+
+```bash
+sudo cp cleaner.py /usr/local/bin/cleaner
+```
 
 ### Options
 
